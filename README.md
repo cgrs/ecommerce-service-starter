@@ -2,6 +2,9 @@
 
 Basic ecommerce service written in Go for educational purposes.
 
+> :warning: You're in the solution branch.
+> If you get stuck, start a discussion in this repo to get hints instead of just copying the solution.
+
 # Prerequisites
 
 You should have at least Go 1.16 installed in your system.
