@@ -11,7 +11,7 @@ Optionally, if you want to have live reloading code, you must have [air](https:/
 # Quickstart
 
 1. This repo is a template. [Use it](https://github.com/cgrs/ecommerce-service-starter/generate) to generate a new repo
-in your personal account with the basic folder structure.
+in your personal account with the basic folder structure and some boilerplate code (a logging middleware and some tests).
 
 2. After it's created, clone the repository in your machine, navigate to the directory and launch it:
 
