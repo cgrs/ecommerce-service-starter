@@ -66,10 +66,10 @@ func FindBySession(sessionId string) *Customer {
 	return cust
 }
 
-func DoCheckout(cartId string) error {
+func DoCheckout(cartId string) (*orders.Order, error) {
 	c := cart.Find(cartId)
 	if c == nil {
-		return fmt.Errorf("user does not have a cart")
+		return nil, fmt.Errorf("user does not have a cart")
 	}
 	o := &orders.Order{
 		Username: c.Customer.Username,
@@ -82,7 +82,10 @@ func DoCheckout(cartId string) error {
 
 	customer := Find(c.Customer.Username)
 	customer.Orders = append(customer.Orders, fmt.Sprint(o.Number))
-	return Update(customer)
+	if err := cart.Empty(cartId); err != nil {
+		return nil, err
+	}
+	return o, Update(customer)
 }
 
 func Update(c *Customer) error {

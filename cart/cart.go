@@ -75,3 +75,7 @@ func (c *Cart) GetTotal() float64 {
 	}
 	return t
 }
+
+func Empty(id string) error {
+	return Update(id, []Line{})
+}

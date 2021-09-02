@@ -2,13 +2,14 @@ package items
 
 import (
 	"fmt"
+	"math"
 	"sync"
 
 	"github.com/cgrs/ecommerce-service-starter/utils"
 )
 
 type Item struct {
-	ID          int     `json:"-"`
+	ID          int     `json:"id"`
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
 	UnitPrice   float64 `json:"price"`
@@ -64,4 +65,22 @@ func List() []*Item {
 		return true
 	})
 	return itms
+}
+
+func Delete(id int) error {
+	item := Find(id)
+	if item == nil {
+		return fmt.Errorf("item does not exist")
+	}
+	items.Delete(id)
+	return nil
+}
+
+func GetNextID() int {
+	result := -1.0
+	items.Range(func(key, value interface{}) bool {
+		result = math.Max(result, float64(value.(*Item).ID))
+		return true
+	})
+	return int(result) + 1
 }

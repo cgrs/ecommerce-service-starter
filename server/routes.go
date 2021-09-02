@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -12,7 +13,10 @@ import (
 	"github.com/cgrs/ecommerce-service-starter/cart"
 	"github.com/cgrs/ecommerce-service-starter/customers"
 	"github.com/cgrs/ecommerce-service-starter/items"
+	"github.com/cgrs/ecommerce-service-starter/orders"
 )
+
+type contextKey string
 
 func RootHandler(rw http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(rw)
@@ -34,7 +38,7 @@ var MainMux = http.NewServeMux()
 
 func HandleLogin(rw http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(rw)
-	if r.Method != "POST" {
+	if r.Method != http.MethodPost {
 		rw.WriteHeader(http.StatusMethodNotAllowed)
 		enc.Encode(map[string]interface{}{
 			"status": 405, "message": "method not allowed",
@@ -109,12 +113,13 @@ func GetOrders(rw http.ResponseWriter, r *http.Request) {
 		enc.Encode("customer not found")
 		return
 	}
+	orders.FindByCustomer(customer.Username)
 	enc.Encode(customer.Orders)
 }
 
 func HandleRegister(rw http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(rw)
-	if r.Method != "POST" {
+	if r.Method != http.MethodPost {
 		rw.WriteHeader(http.StatusMethodNotAllowed)
 		enc.Encode(map[string]interface{}{
 			"status": 405, "message": "method not allowed",
@@ -165,7 +170,14 @@ func GetCart(rw http.ResponseWriter, r *http.Request) {
 		enc.Encode("cart not found")
 		return
 	}
-	enc.Encode(c)
+	t := c.GetTotal()
+	var result struct {
+		*cart.Cart
+		Total float64 `json:"total"`
+	}
+	result.Cart = c
+	result.Total = t
+	enc.Encode(result)
 }
 
 func UpdateCart(rw http.ResponseWriter, r *http.Request) {
@@ -194,9 +206,9 @@ func UpdateCart(rw http.ResponseWriter, r *http.Request) {
 
 func HandleCart(rw http.ResponseWriter, r *http.Request) {
 	switch r.Method {
-	case "GET":
+	case http.MethodGet:
 		GetCart(rw, r)
-	case "PUT":
+	case http.MethodPut:
 		UpdateCart(rw, r)
 	default:
 		notAllowed(rw, r)
@@ -204,7 +216,7 @@ func HandleCart(rw http.ResponseWriter, r *http.Request) {
 }
 
 func HandleCheckout(rw http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
+	if r.Method != http.MethodPost {
 		notAllowed(rw, r)
 		return
 	}
@@ -216,11 +228,12 @@ func HandleCheckout(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := customers.DoCheckout(cookie.Value); err != nil {
+	order, err := customers.DoCheckout(cookie.Value)
+	if err != nil {
 		rw.WriteHeader(http.StatusInternalServerError)
 		enc.Encode(err)
 	}
-
+	enc.Encode(order)
 }
 
 func GetItems(rw http.ResponseWriter, r *http.Request) {
@@ -230,30 +243,174 @@ func GetItems(rw http.ResponseWriter, r *http.Request) {
 }
 
 func AddItem(rw http.ResponseWriter, r *http.Request) {
-
+	enc := json.NewEncoder(rw)
+	cookie, err := r.Cookie("session")
+	if err != nil && err == http.ErrNoCookie {
+		rw.WriteHeader(http.StatusBadRequest)
+		enc.Encode("missing cookie")
+		return
+	}
+	customer := customers.FindBySession(cookie.Value)
+	if customer == nil {
+		rw.WriteHeader(http.StatusInternalServerError)
+		enc.Encode("customer not found")
+		return
+	}
+	if !customer.Admin {
+		rw.WriteHeader(http.StatusForbidden)
+		enc.Encode("you do not have permission to add items")
+		return
+	}
+	dec := json.NewDecoder(r.Body)
+	var body struct {
+		Name        string  `json:"name"`
+		Description string  `json:"description"`
+		UnitPrice   float64 `json:"price"`
+	}
+	if err := dec.Decode(&body); err != nil && err != io.EOF {
+		rw.WriteHeader(http.StatusInternalServerError)
+		enc.Encode(err)
+		return
+	}
+	i := &items.Item{
+		ID:          items.GetNextID(),
+		Name:        body.Name,
+		Description: body.Description,
+		UnitPrice:   body.UnitPrice,
+	}
+	if err := items.Add(i); err != nil {
+		rw.WriteHeader(http.StatusInternalServerError)
+		enc.Encode(err)
+		return
+	}
+	rw.WriteHeader(http.StatusCreated)
+	enc.Encode(i)
 }
 
 func HandleItems(rw http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		GetItems(rw, r)
+	case http.MethodPost:
+		AddItem(rw, r)
+	default:
+		notAllowed(rw, r)
+	}
+}
+
+func GetSingleItem(rw http.ResponseWriter, r *http.Request) {
+	itemId := r.Context().Value(contextKey("path")).(int)
+	item := items.Find(itemId)
+	if item == nil {
+		rw.WriteHeader(http.StatusNotFound)
+	}
+	json.NewEncoder(rw).Encode(item)
+}
+
+func UpdateItem(rw http.ResponseWriter, r *http.Request) {
+	itemId := r.Context().Value(contextKey("path")).(int)
+	enc := json.NewEncoder(rw)
+	item := items.Find(itemId)
+	if item == nil {
+		rw.WriteHeader(http.StatusNotFound)
+		enc.Encode("item does not exist")
+		return
+	}
+	cookie, err := r.Cookie("session")
+	if err != nil && err == http.ErrNoCookie {
+		rw.WriteHeader(http.StatusBadRequest)
+		enc.Encode("missing cookie")
+		return
+	}
+	customer := customers.FindBySession(cookie.Value)
+	if customer == nil {
+		rw.WriteHeader(http.StatusInternalServerError)
+		enc.Encode("customer not found")
+		return
+	}
+	if !customer.Admin {
+		rw.WriteHeader(http.StatusForbidden)
+		enc.Encode("you do not have permission to update items")
+		return
+	}
+	dec := json.NewDecoder(r.Body)
+	var body struct {
+		Name        string  `json:"name"`
+		Description string  `json:"description"`
+		UnitPrice   float64 `json:"price"`
+	}
+	if err := dec.Decode(&body); err != nil && err != io.EOF {
+		rw.WriteHeader(http.StatusInternalServerError)
+		enc.Encode(err)
+		return
+	}
+	i := &items.Item{
+		ID:          itemId,
+		Name:        body.Name,
+		Description: body.Description,
+		UnitPrice:   body.UnitPrice,
+	}
+	if err := items.Update(i); err != nil {
+		rw.WriteHeader(http.StatusInternalServerError)
+		enc.Encode(err)
+		return
+	}
+	rw.WriteHeader(http.StatusNoContent)
+}
+
+func RemoveItem(rw http.ResponseWriter, r *http.Request) {
+	itemId := r.Context().Value(contextKey("path")).(int)
+	enc := json.NewEncoder(rw)
+	item := items.Find(itemId)
+	if item == nil {
+		rw.WriteHeader(http.StatusNotFound)
+		enc.Encode("item does not exist")
+		return
+	}
+	cookie, err := r.Cookie("session")
+	if err != nil && err == http.ErrNoCookie {
+		rw.WriteHeader(http.StatusBadRequest)
+		enc.Encode("missing cookie")
+		return
+	}
+	customer := customers.FindBySession(cookie.Value)
+	if customer == nil {
+		rw.WriteHeader(http.StatusInternalServerError)
+		enc.Encode("customer not found")
+		return
+	}
+	if !customer.Admin {
+		rw.WriteHeader(http.StatusForbidden)
+		enc.Encode("you do not have permission to delete items")
+		return
+	}
+	if err := items.Delete(itemId); err != nil {
+		rw.WriteHeader(http.StatusInternalServerError)
+		enc.Encode(err)
+		return
+	}
+	rw.WriteHeader(http.StatusNoContent)
+}
+
+func HandleSingleItems(rw http.ResponseWriter, r *http.Request) {
 	prefix := "/api/items/"
-	path := r.URL.Path[len(prefix):]
-	if path == "" {
-		switch r.Method {
-		case "GET":
-			GetItems(rw, r)
-		case "POST":
-			AddItem(rw, r)
-		default:
-			notAllowed(rw, r)
-		}
-	} else {
-		switch r.Method {
-		case "GET":
-		case "PUT":
-		case "DELETE":
-			return
-		default:
-			notAllowed(rw, r)
-		}
+	pathString := r.URL.Path[len(prefix):]
+	path, err := strconv.ParseInt(pathString, 10, 0)
+	if err != nil {
+		rw.WriteHeader(http.StatusBadRequest)
+		rw.Write([]byte(`"invalid item id"`))
+		return
+	}
+	r = r.WithContext(context.WithValue(r.Context(), contextKey("path"), int(path)))
+	switch r.Method {
+	case http.MethodGet:
+		GetSingleItem(rw, r)
+	case http.MethodPut:
+		UpdateItem(rw, r)
+	case http.MethodDelete:
+		RemoveItem(rw, r)
+	default:
+		notAllowed(rw, r)
 	}
 }
 
@@ -265,5 +422,6 @@ func init() {
 	MainMux.HandleFunc("/api/orders", GetOrders)
 	MainMux.HandleFunc("/api/cart", HandleCart)
 	MainMux.HandleFunc("/api/cart/checkout", HandleCheckout)
-	MainMux.HandleFunc("/api/items/", HandleItems)
+	MainMux.HandleFunc("/api/items", HandleItems)
+	MainMux.HandleFunc("/api/items/", HandleSingleItems)
 }
