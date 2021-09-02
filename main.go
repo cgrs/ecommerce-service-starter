@@ -10,7 +10,9 @@ func main() {
 		server.CreateServer(
 			"",
 			middlewares.WithLogger(
-				server.MainMux,
+				middlewares.WithJson(
+					server.MainMux,
+				),
 				nil,
 			),
 		),
