@@ -1,11 +1,10 @@
 package server
 
 import (
-	"context"
 	"crypto/md5"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/cgrs/ecommerce-service-starter/customers"
 	"github.com/cgrs/ecommerce-service-starter/items"
 	"github.com/cgrs/ecommerce-service-starter/orders"
+	"github.com/gin-gonic/gin"
 )
 
 type contextKey string
@@ -24,151 +24,95 @@ func RootHandler(rw http.ResponseWriter, r *http.Request) {
 	enc.Encode(map[string]interface{}{"status": 200, "message": "OK"})
 }
 
-func GetStats(rw http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(rw)
+func GetStats(ctx *gin.Context) {
 	customersCount := customers.Count()
 	ordersCount := customers.OrdersCount()
 	itemsCount := items.Count()
 	cartsCount := cart.Count()
-	rw.WriteHeader(http.StatusOK)
-	enc.Encode(map[string]interface{}{"stats": map[string]int{"customers": customersCount, "orders": ordersCount, "items": itemsCount, "carts": cartsCount}})
+	ctx.JSON(http.StatusOK, gin.H{"stats": gin.H{"customers": customersCount, "orders": ordersCount, "items": itemsCount, "carts": cartsCount}})
 }
 
-var MainMux = http.NewServeMux()
-
-func HandleLogin(rw http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(rw)
-	if r.Method != http.MethodPost {
-		rw.WriteHeader(http.StatusMethodNotAllowed)
-		enc.Encode(map[string]interface{}{
-			"status": 405, "message": "method not allowed",
-		})
-		return
-	}
-	cookie, err := r.Cookie("session")
-	if err != nil && err != http.ErrNoCookie {
-		rw.WriteHeader(http.StatusInternalServerError)
-		return
+func HandleLogin(ctx *gin.Context) {
+	cookie, err := ctx.Request.Cookie("session")
+	if err != nil && !errors.Is(err, http.ErrNoCookie) {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
 	if cookie != nil && cart.Find(cookie.Value) != nil {
 		return
 	}
-	dec := json.NewDecoder(r.Body)
 	var body struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
+		Username string `json:"username" binding:"required"`
+		Password string `json:"password" binding:"required"`
 	}
-	if err := dec.Decode(&body); err != nil && err != io.EOF {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(err)
-		return
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
 	if err := customers.Login(body.Username, body.Password); err != nil {
-		rw.WriteHeader(http.StatusBadRequest)
-		enc.Encode(err)
-		return
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
 
 	sessionID := fmt.Sprintf("%x", md5.Sum([]byte(body.Username+strconv.FormatInt(time.Now().UTC().UnixNano(), 10))))
 
-	cart.Create(sessionID, body.Username)
+	if err := cart.Create(sessionID, body.Username); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 
-	http.SetCookie(rw, &http.Cookie{
-		Name:     "session",
-		Value:    sessionID,
-		HttpOnly: true,
-	})
+	ctx.SetCookie("session", sessionID, 0, "", "", false, true)
 }
 
-func HandleLogout(rw http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(rw)
-	cookie, err := r.Cookie("session")
-	if err != nil && err != http.ErrNoCookie {
-		rw.WriteHeader(http.StatusInternalServerError)
-		return
+func HandleLogout(ctx *gin.Context) {
+	cookie, err := ctx.Request.Cookie("session")
+	if err != nil && !errors.Is(err, http.ErrNoCookie) {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
 	if cookie == nil {
-		rw.WriteHeader(http.StatusBadRequest)
-		return
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
 	if err := cart.Delete(cookie.Value); err != nil {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(map[string]interface{}{"status": http.StatusInternalServerError, "message": err.Error()})
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
 	cookie.MaxAge = -1
-	http.SetCookie(rw, cookie)
+	ctx.SetCookie(cookie.Name, cookie.Value, cookie.MaxAge, cookie.Path, cookie.Domain, cookie.Secure, cookie.HttpOnly)
 }
 
-func GetOrders(rw http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(rw)
-	cookie, err := r.Cookie("session")
-	if err != nil && err == http.ErrNoCookie {
-		rw.WriteHeader(http.StatusBadRequest)
-		enc.Encode("missing cookie")
-		return
+func GetOrders(ctx *gin.Context) {
+	cookie, err := ctx.Request.Cookie("session")
+	if err != nil && errors.Is(err, http.ErrNoCookie) {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
 	customer := customers.FindBySession(cookie.Value)
 	if customer == nil {
-		rw.WriteHeader(http.StatusNotFound)
-		enc.Encode("customer not found")
-		return
+		ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "customer not found"})
 	}
-	orders.FindByCustomer(customer.Username)
-	enc.Encode(customer.Orders)
+
+	ctx.JSON(http.StatusOK, orders.FindByCustomer(customer.Username))
 }
 
-func HandleRegister(rw http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(rw)
-	if r.Method != http.MethodPost {
-		rw.WriteHeader(http.StatusMethodNotAllowed)
-		enc.Encode(map[string]interface{}{
-			"status": 405, "message": "method not allowed",
-		})
-		return
-	}
-	dec := json.NewDecoder(r.Body)
+func HandleRegister(ctx *gin.Context) {
 	var body struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Email    string `json:"email"`
+		Username string `json:"username" binding:"required"`
+		Password string `json:"password" binding:"required"`
+		Email    string `json:"email" binding:"required"`
 		Admin    bool   `json:"admin"`
 	}
-	if err := dec.Decode(&body); err != nil && err != io.EOF {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(err)
-		return
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
-	if body.Username == "" || body.Password == "" || body.Email == "" {
-		rw.WriteHeader(http.StatusBadRequest)
-		enc.Encode(map[string]interface{}{"error": "missing required params: username, password and/or email"})
-		return
-	}
+
 	if err := customers.Register(body.Username, body.Password, body.Email, body.Admin); err != nil {
-		rw.WriteHeader(http.StatusBadRequest)
-		enc.Encode(err)
-		return
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
+	ctx.Status(http.StatusCreated)
 }
 
-func notAllowed(rw http.ResponseWriter, r *http.Request) {
-	rw.WriteHeader(http.StatusMethodNotAllowed)
-	enc := json.NewEncoder(rw)
-	enc.Encode(map[string]interface{}{"error": 405, "message": "method not allowed"})
-}
-
-func GetCart(rw http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(rw)
-	cookie, err := r.Cookie("session")
-	if err != nil && err == http.ErrNoCookie {
-		rw.WriteHeader(http.StatusBadRequest)
-		enc.Encode("missing cookie")
-		return
+func GetCart(ctx *gin.Context) {
+	cookie, err := ctx.Request.Cookie("session")
+	if err != nil && errors.Is(err, http.ErrNoCookie) {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
 	c := cart.Find(cookie.Value)
 	if c == nil {
-		rw.WriteHeader(http.StatusNotFound)
-		enc.Encode("cart not found")
-		return
+		ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "cart not found"})
 	}
 	t := c.GetTotal()
 	var result struct {
@@ -177,100 +121,61 @@ func GetCart(rw http.ResponseWriter, r *http.Request) {
 	}
 	result.Cart = c
 	result.Total = t
-	enc.Encode(result)
+	ctx.JSON(http.StatusOK, result)
 }
 
-func UpdateCart(rw http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(rw)
-	cookie, err := r.Cookie("session")
-	if err != nil && err == http.ErrNoCookie {
-		rw.WriteHeader(http.StatusBadRequest)
-		enc.Encode("missing cookie")
-		return
+func UpdateCart(ctx *gin.Context) {
+	cookie, err := ctx.Request.Cookie("session")
+	if err != nil && errors.Is(err, http.ErrNoCookie) {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
-	dec := json.NewDecoder(r.Body)
 	var body struct {
-		Lines []cart.Line `json:"lines"`
+		Lines []cart.Line `json:"lines" binding:"dive"`
 	}
-	if err := dec.Decode(&body); err != nil && err != io.EOF {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(err)
-		return
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
 	if err := cart.Update(cookie.Value, body.Lines); err != nil {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(err)
-		return
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
+	ctx.Status(http.StatusNoContent)
 }
 
-func HandleCart(rw http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		GetCart(rw, r)
-	case http.MethodPut:
-		UpdateCart(rw, r)
-	default:
-		notAllowed(rw, r)
+func HandleCheckout(ctx *gin.Context) {
+	cookie, err := ctx.Request.Cookie("session")
+	if err != nil && errors.Is(err, http.ErrNoCookie) {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
-}
-
-func HandleCheckout(rw http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		notAllowed(rw, r)
-		return
-	}
-	enc := json.NewEncoder(rw)
-	cookie, err := r.Cookie("session")
-	if err != nil && err == http.ErrNoCookie {
-		rw.WriteHeader(http.StatusBadRequest)
-		enc.Encode("missing cookie")
-		return
-	}
-
 	order, err := customers.DoCheckout(cookie.Value)
 	if err != nil {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(err)
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
-	enc.Encode(order)
+	ctx.JSON(http.StatusOK, order)
 }
 
-func GetItems(rw http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(rw)
-	itms := items.List()
-	enc.Encode(itms)
+func GetItems(ctx *gin.Context) {
+	ctx.JSON(http.StatusOK, items.List())
 }
 
-func AddItem(rw http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(rw)
-	cookie, err := r.Cookie("session")
-	if err != nil && err == http.ErrNoCookie {
-		rw.WriteHeader(http.StatusBadRequest)
-		enc.Encode("missing cookie")
-		return
+func AddItem(ctx *gin.Context) {
+	cookie, err := ctx.Request.Cookie("session")
+	if err != nil && errors.Is(err, http.ErrNoCookie) {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
 	customer := customers.FindBySession(cookie.Value)
 	if customer == nil {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode("customer not found")
-		return
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "customer not found"})
 	}
 	if !customer.Admin {
-		rw.WriteHeader(http.StatusForbidden)
-		enc.Encode("you do not have permission to add items")
-		return
+		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "you do not have permission to add items"})
 	}
-	dec := json.NewDecoder(r.Body)
 	var body struct {
-		Name        string  `json:"name"`
-		Description string  `json:"description"`
-		UnitPrice   float64 `json:"price"`
+		Name        string  `json:"name" binding:"required"`
+		Description string  `json:"description" binding:"required"`
+		UnitPrice   float64 `json:"price" binding:"required"`
 	}
-	if err := dec.Decode(&body); err != nil && err != io.EOF {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(err)
-		return
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
 	i := &items.Item{
 		ID:          items.GetNextID(),
@@ -279,149 +184,105 @@ func AddItem(rw http.ResponseWriter, r *http.Request) {
 		UnitPrice:   body.UnitPrice,
 	}
 	if err := items.Add(i); err != nil {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(err)
-		return
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
-	rw.WriteHeader(http.StatusCreated)
-	enc.Encode(i)
+	ctx.JSON(http.StatusCreated, i)
 }
 
-func HandleItems(rw http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		GetItems(rw, r)
-	case http.MethodPost:
-		AddItem(rw, r)
-	default:
-		notAllowed(rw, r)
+func GetSingleItem(ctx *gin.Context) {
+	itemId, err := strconv.ParseInt(ctx.Param("id"), 10, 0)
+	if err != nil {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
-}
-
-func GetSingleItem(rw http.ResponseWriter, r *http.Request) {
-	itemId := r.Context().Value(contextKey("path")).(int)
-	item := items.Find(itemId)
+	item := items.Find(int(itemId))
 	if item == nil {
-		rw.WriteHeader(http.StatusNotFound)
+		ctx.JSON(http.StatusNotFound, item)
 	}
-	json.NewEncoder(rw).Encode(item)
+	ctx.JSON(http.StatusOK, item)
 }
 
-func UpdateItem(rw http.ResponseWriter, r *http.Request) {
-	itemId := r.Context().Value(contextKey("path")).(int)
-	enc := json.NewEncoder(rw)
-	item := items.Find(itemId)
-	if item == nil {
-		rw.WriteHeader(http.StatusNotFound)
-		enc.Encode("item does not exist")
-		return
+func UpdateItem(ctx *gin.Context) {
+	itemId, err := strconv.ParseInt(ctx.Param("id"), 10, 0)
+	if err != nil {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
-	cookie, err := r.Cookie("session")
-	if err != nil && err == http.ErrNoCookie {
-		rw.WriteHeader(http.StatusBadRequest)
-		enc.Encode("missing cookie")
-		return
+	item := items.Find(int(itemId))
+	if item == nil {
+		ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "item does not exist"})
+	}
+	cookie, err := ctx.Request.Cookie("session")
+	if err != nil && errors.Is(err, http.ErrNoCookie) {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
 	customer := customers.FindBySession(cookie.Value)
 	if customer == nil {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode("customer not found")
-		return
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "customer not found"})
 	}
 	if !customer.Admin {
-		rw.WriteHeader(http.StatusForbidden)
-		enc.Encode("you do not have permission to update items")
-		return
+		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "you do not have permission to update items"})
 	}
-	dec := json.NewDecoder(r.Body)
 	var body struct {
 		Name        string  `json:"name"`
 		Description string  `json:"description"`
 		UnitPrice   float64 `json:"price"`
 	}
-	if err := dec.Decode(&body); err != nil && err != io.EOF {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(err)
-		return
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
 	i := &items.Item{
-		ID:          itemId,
+		ID:          int(itemId),
 		Name:        body.Name,
 		Description: body.Description,
 		UnitPrice:   body.UnitPrice,
 	}
 	if err := items.Update(i); err != nil {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(err)
-		return
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
-	rw.WriteHeader(http.StatusNoContent)
+	ctx.Status(http.StatusNoContent)
 }
 
-func RemoveItem(rw http.ResponseWriter, r *http.Request) {
-	itemId := r.Context().Value(contextKey("path")).(int)
-	enc := json.NewEncoder(rw)
-	item := items.Find(itemId)
-	if item == nil {
-		rw.WriteHeader(http.StatusNotFound)
-		enc.Encode("item does not exist")
-		return
+func RemoveItem(ctx *gin.Context) {
+	itemId, err := strconv.ParseInt(ctx.Param("id"), 10, 0)
+	if err != nil {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
-	cookie, err := r.Cookie("session")
-	if err != nil && err == http.ErrNoCookie {
-		rw.WriteHeader(http.StatusBadRequest)
-		enc.Encode("missing cookie")
-		return
+	item := items.Find(int(itemId))
+	if item == nil {
+		ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "item does not exist"})
+	}
+	cookie, err := ctx.Request.Cookie("session")
+	if err != nil && errors.Is(err, http.ErrNoCookie) {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
 	customer := customers.FindBySession(cookie.Value)
 	if customer == nil {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode("customer not found")
-		return
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "customer not found"})
 	}
 	if !customer.Admin {
-		rw.WriteHeader(http.StatusForbidden)
-		enc.Encode("you do not have permission to delete items")
-		return
+		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "you do not have permission to delete items"})
 	}
-	if err := items.Delete(itemId); err != nil {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(err)
-		return
+	if err := items.Delete(int(itemId)); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
-	rw.WriteHeader(http.StatusNoContent)
+	ctx.Status(http.StatusNoContent)
 }
 
-func HandleSingleItems(rw http.ResponseWriter, r *http.Request) {
-	prefix := "/api/items/"
-	pathString := r.URL.Path[len(prefix):]
-	path, err := strconv.ParseInt(pathString, 10, 0)
-	if err != nil {
-		rw.WriteHeader(http.StatusBadRequest)
-		rw.Write([]byte(`"invalid item id"`))
-		return
-	}
-	r = r.WithContext(context.WithValue(r.Context(), contextKey("path"), int(path)))
-	switch r.Method {
-	case http.MethodGet:
-		GetSingleItem(rw, r)
-	case http.MethodPut:
-		UpdateItem(rw, r)
-	case http.MethodDelete:
-		RemoveItem(rw, r)
-	default:
-		notAllowed(rw, r)
-	}
-}
-
-func init() {
-	MainMux.HandleFunc("/stats", GetStats)
-	MainMux.HandleFunc("/api/login", HandleLogin)
-	MainMux.HandleFunc("/api/logout", HandleLogout)
-	MainMux.HandleFunc("/api/register", HandleRegister)
-	MainMux.HandleFunc("/api/orders", GetOrders)
-	MainMux.HandleFunc("/api/cart", HandleCart)
-	MainMux.HandleFunc("/api/cart/checkout", HandleCheckout)
-	MainMux.HandleFunc("/api/items", HandleItems)
-	MainMux.HandleFunc("/api/items/", HandleSingleItems)
+func Router(e *gin.Engine) error {
+	e.GET("/stats", GetStats)
+	api := e.Group("/api")
+	api.POST("/login", HandleLogin)
+	api.GET("/logout", HandleLogout)
+	api.POST("/register", HandleRegister)
+	api.GET("/orders", GetOrders)
+	cart := api.Group("/cart")
+	cart.GET("/", GetCart)
+	cart.PUT("/", UpdateCart)
+	cart.POST("/checkout", HandleCheckout)
+	items := api.Group("/items")
+	items.GET("/", GetItems)
+	items.POST("/", AddItem)
+	items.GET("/:id", GetSingleItem)
+	items.PUT("/:id", UpdateItem)
+	items.DELETE("/:id", RemoveItem)
+	return nil
 }
