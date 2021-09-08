@@ -11,6 +11,18 @@ You should have at least Go 1.16 installed in your system.
 
 Optionally, if you want to have live reloading code, you must have [air](https://github.com/cosmtrek/air) installed.
 
+## gRPC prerequisites
+To start working on the gRPC approach, you'll need to install:
+
+* `protoc`. Compiles Protocol Buffers into Go source code. Needs the following plugins to work:
+  * `protoc-gen-go` (needed to create Go version of the Protocol Buffer).
+  * `protoc-gen-go-grpc` (required for creating all the gRPC "glue" code).
+  * `protoc-gen-validate` (used for validating some Protocol Buffer messages).
+* `buf`. Helper tool to compile Protocol Buffers in an easier way.
+
+To compile the protocol buffers with gRPC and validation code, make sure you have all the `proto*` tools in your `$PATH`, then execute:
+
+    buf generate
 # Quickstart
 
 1. This repo is a template. [Use it](https://github.com/cgrs/ecommerce-service-starter/generate) to generate a new repo

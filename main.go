@@ -1,20 +1,14 @@
 package main
 
 import (
-	"github.com/cgrs/ecommerce-service-starter/middlewares"
+	"log"
+
 	"github.com/cgrs/ecommerce-service-starter/server"
 )
 
 func main() {
-	server.Start(
-		server.CreateServer(
-			"",
-			middlewares.WithLogger(
-				middlewares.WithJson(
-					server.MainMux,
-				),
-				nil,
-			),
-		),
-	)
+	s := server.New()
+	if err := s.Start(":50051"); err != nil {
+		log.Fatal(err)
+	}
 }

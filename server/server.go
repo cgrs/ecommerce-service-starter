@@ -1,23 +1,52 @@
 package server
 
 import (
-	"log"
-	"net/http"
+	"net"
+
+	itemsv1 "github.com/cgrs/ecommerce-service-starter/items/v1"
+	"github.com/cgrs/ecommerce-service-starter/storage/memory"
+	"github.com/grpc-ecosystem/go-grpc-middleware"
+	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
+	grpc_validator "github.com/grpc-ecosystem/go-grpc-middleware/validator"
+	"google.golang.org/grpc"
 )
 
-func CreateServer(address string, handler http.Handler) *http.Server {
-	if address == "" {
-		address = "localhost:3000"
-	}
-
-	return &http.Server{
-		Addr:    address,
-		Handler: handler,
-	}
+type server struct {
+	gs *grpc.Server
 }
 
-// Starts the server
-func Start(s *http.Server) error {
-	log.Printf("Server is listening on http://%s\n", s.Addr)
-	return s.ListenAndServe()
+type Server interface {
+	Start(addr string) error
+}
+
+func New() Server {
+	gs := grpc.NewServer(
+		grpc.StreamInterceptor(
+			grpc_middleware.ChainStreamServer(
+				grpc_recovery.StreamServerInterceptor(),
+				grpc_validator.StreamServerInterceptor(),
+			),
+		),
+		grpc.UnaryInterceptor(
+			grpc_middleware.ChainUnaryServer(
+				grpc_recovery.UnaryServerInterceptor(),
+				grpc_validator.UnaryServerInterceptor(),
+			),
+		),
+	)
+	s := &server{gs}
+	s.setup()
+	return s
+}
+
+func (s *server) Start(addr string) error {
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return s.gs.Serve(lis)
+}
+
+func (s *server) setup() {
+	itemsv1.Register(s.gs, itemsv1.New(itemsv1.NewRepository(memory.New())))
 }

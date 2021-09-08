@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package items.v1;
+
+option go_package = "github.com/cgrs/ecommerce-service-starter/gen/proto/go/items/v1";
+
+import "google/protobuf/empty.proto";
+import "validate/validate.proto";
+
+message Item {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  float unit_price = 4;
+}
+
+service ItemsService {
+  rpc Create (CreateItemRequest) returns (Item);
+  rpc List (google.protobuf.Empty) returns (ListResponse);
+  rpc Find (FindItemRequest) returns (Item);
+  rpc Update (UpdateItemRequest) returns (Item);
+  rpc Delete (DeleteItemRequest) returns (google.protobuf.Empty);
+}
+
+message CreateItemRequest {
+  Item item = 1 [(validate.rules).message.required = true];
+}
+message UpdateItemRequest {
+  Item item = 1;
+}
+message DeleteItemRequest {
+  string id = 1;
+}
+message ListResponse {
+  repeated Item items = 1;
+}
+message FindItemRequest {
+  string id = 1;
+}
