@@ -13,6 +13,7 @@ import (
 type Repository interface {
 	Create(context.Context, *pb.Item) (*pb.Item, error)
 	List(context.Context) ([]*pb.Item, error)
+	Filter(context.Context, []string) []*pb.Item
 	Find(context.Context, string) *pb.Item
 	Update(context.Context, *pb.Item) (*pb.Item, error)
 	Delete(context.Context, string) error
@@ -74,4 +75,15 @@ func (r *repository) Delete(ctx context.Context, id string) error {
 		return &ErrNotFound{id}
 	}
 	return r.storage.Delete(ctx, id)
+}
+
+func (r *repository) Filter(ctx context.Context, ids []string) []*pb.Item {
+	result := []*pb.Item{}
+	for _, id := range ids {
+		i := r.Find(ctx, id)
+		if i != nil {
+			result = append(result, i)
+		}
+	}
+	return result
 }

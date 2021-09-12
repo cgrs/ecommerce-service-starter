@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package orders.v1;
+
+import "google/protobuf/empty.proto";
+import "validate/validate.proto";
+
+message Order {
+  string id = 1 [(validate.rules).string.uuid = true];
+  repeated Line lines = 2 [(validate.rules).repeated.min_items = 1];
+  float total = 3;
+  Status status = 4 [(validate.rules).enum.defined_only = true];
+}
+
+enum Status {
+  STATUS_PAYMENT_UNSPECIFIED = 0;
+  STATUS_PAYMENT_SUCCESSFUL = 1;
+  STATUS_PAYMENT_PENDING = 2;
+  STATUS_PAYMENT_ERROR = 3;
+}
+
+message Line {
+  string item_id = 1 [(validate.rules).string.uuid = true];
+  uint32 quantity = 2 [(validate.rules).uint32.gt = 0];
+}
+
+service OrdersService {
+  rpc Create (CreateOrderRequest) returns (Order);
+  rpc List (ListOrderRequest) returns (ListResponse);
+  rpc Find (FindOrderRequest) returns (Order);
+  rpc Update (UpdateOrderRequest) returns (Order);
+  rpc Delete (DeleteOrderRequest) returns (google.protobuf.Empty);
+}
+
+message CreateOrderRequest {
+  Order order = 1 [(validate.rules).message.required = true];
+}
+
+message ListOrderRequest {
+  repeated string ids = 1 [(validate.rules).repeated.items.string.uuid = true];
+}
+
+message ListResponse {
+  repeated Order orders = 1;
+}
+
+message FindOrderRequest {
+  string id = 1[(validate.rules).string.uuid = true];
+}
+
+message UpdateOrderRequest {
+  Order order = 1;
+}
+
+message DeleteOrderRequest {
+  string id = 1 [(validate.rules).string.uuid = true];
+}

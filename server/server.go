@@ -4,8 +4,9 @@ import (
 	"net"
 
 	itemsv1 "github.com/cgrs/ecommerce-service-starter/items/v1"
+	ordersv1 "github.com/cgrs/ecommerce-service-starter/orders/v1"
 	"github.com/cgrs/ecommerce-service-starter/storage/memory"
-	"github.com/grpc-ecosystem/go-grpc-middleware"
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	grpc_validator "github.com/grpc-ecosystem/go-grpc-middleware/validator"
 	"google.golang.org/grpc"
@@ -49,4 +50,5 @@ func (s *server) Start(addr string) error {
 
 func (s *server) setup() {
 	itemsv1.Register(s.gs, itemsv1.New(itemsv1.NewRepository(memory.New())))
+	ordersv1.Register(s.gs, ordersv1.New(ordersv1.NewRepository(memory.New())))
 }

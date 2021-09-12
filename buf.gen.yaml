@@ -1,4 +1,10 @@
 version: v1
+managed:
+  enabled: true
+  go_package_prefix:
+    default: github.com/cgrs/ecommerce-service-starter/gen/proto/go
+    except:
+      - buf.build/envoyproxy/protoc-gen-validate
 plugins:
   - name: go
     out: gen/proto/go

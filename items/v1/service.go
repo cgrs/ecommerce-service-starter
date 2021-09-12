@@ -6,8 +6,6 @@ import (
 	pb "github.com/cgrs/ecommerce-service-starter/gen/proto/go/items/v1"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -26,11 +24,8 @@ func (s *itemService) Create(ctx context.Context, r *pb.CreateItemRequest) (*pb.
 	return s.repository.Create(ctx, i)
 }
 
-func (s *itemService) List(ctx context.Context, r *emptypb.Empty) (*pb.ListResponse, error) {
-	list, err := s.repository.List(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "unexpected error: %s", err.Error())
-	}
+func (s *itemService) List(ctx context.Context, r *pb.ListItemRequest) (*pb.ListResponse, error) {
+	list := s.repository.Filter(ctx, r.Ids)
 	return &pb.ListResponse{Items: list}, nil
 }
 
