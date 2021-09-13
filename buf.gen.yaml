@@ -9,7 +9,7 @@ plugins:
   - name: go
     out: gen/proto/go
     opt: paths=source_relative
-  - name: go-grpc
+  - name: micro
     out: gen/proto/go
     opt: paths=source_relative
   - name: validate

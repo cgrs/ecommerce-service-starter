@@ -3,48 +3,57 @@ package v1
 import (
 	"context"
 
+	"github.com/asim/go-micro/v3/server"
 	pb "github.com/cgrs/ecommerce-service-starter/gen/proto/go/items/v1"
 	"github.com/google/uuid"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type itemService struct {
 	repository Repository
-	pb.UnimplementedItemsServiceServer
 }
 
-func New(r Repository) pb.ItemsServiceServer {
+func New(r Repository) pb.ItemsHandler {
 	return &itemService{repository: r}
 }
 
-func (s *itemService) Create(ctx context.Context, r *pb.CreateItemRequest) (*pb.Item, error) {
+func (s *itemService) Create(ctx context.Context, r *pb.CreateItemRequest, cr *pb.CreateItemResponse) (err error) {
 	i := r.GetItem()
 	i.Id = uuid.NewString()
-	return s.repository.Create(ctx, i)
+	it, err := s.repository.Create(ctx, i)
+	cr.Item = it
+	return
 }
 
-func (s *itemService) List(ctx context.Context, r *pb.ListItemRequest) (*pb.ListResponse, error) {
-	list := s.repository.Filter(ctx, r.Ids)
-	return &pb.ListResponse{Items: list}, nil
+func (s *itemService) List(ctx context.Context, r *pb.ListItemRequest, lr *pb.ListItemResponse) (err error) {
+	lr.Items, err = s.repository.List(ctx)
+	return
 }
 
-func (s *itemService) Find(ctx context.Context, r *pb.FindItemRequest) (*pb.Item, error) {
-	item := s.repository.Find(ctx, r.Id)
-	if item == nil {
-		return nil, &ErrNotFound{r.Id}
+func (s *itemService) Filter(ctx context.Context, r *pb.FilterItemRequest, lr *pb.FilterItemResponse) (err error) {
+	lr.Items = s.repository.Filter(ctx, r.GetIds())
+	return
+}
+
+func (s *itemService) Find(ctx context.Context, r *pb.FindItemRequest, fr *pb.FindItemResponse) (err error) {
+	it := s.repository.Find(ctx, r.Id)
+	if it == nil {
+		err = &ErrNotFound{r.Id}
+		return
 	}
-	return item, nil
+	fr.Item = it
+	return
 }
 
-func (s *itemService) Update(ctx context.Context, r *pb.UpdateItemRequest) (*pb.Item, error) {
-	return s.repository.Update(ctx, r.Item)
+func (s *itemService) Update(ctx context.Context, r *pb.UpdateItemRequest, ur *pb.UpdateItemResponse) (err error) {
+	it, err := s.repository.Update(ctx, r.Item)
+	ur.Item = it
+	return err
 }
 
-func (s *itemService) Delete(ctx context.Context, r *pb.DeleteItemRequest) (*emptypb.Empty, error) {
-	return nil, s.repository.Delete(ctx, r.Id)
+func (s *itemService) Delete(ctx context.Context, r *pb.DeleteItemRequest, dr *pb.DeleteItemResponse) error {
+	return s.repository.Delete(ctx, r.Id)
 }
 
-func Register(server *grpc.Server, impl pb.ItemsServiceServer) {
-	server.RegisterService(&pb.ItemsService_ServiceDesc, impl)
+func Register(s server.Server, impl pb.ItemsHandler) error {
+	return pb.RegisterItemsHandler(s, impl)
 }

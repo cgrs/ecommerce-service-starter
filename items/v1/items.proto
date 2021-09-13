@@ -2,40 +2,55 @@ syntax = "proto3";
 
 package items.v1;
 
-import "google/protobuf/empty.proto";
 import "validate/validate.proto";
 
 message Item {
-  string id = 1 [(validate.rules).string.uuid = true];
+  string id = 1 [(validate.rules).string = {uuid: true, ignore_empty: true}];
   string name = 2;
   string description = 3;
-  float unit_price = 4;
+  float unit_price = 4 [(validate.rules).float.gte = 0];
 }
 
-service ItemsService {
-  rpc Create (CreateItemRequest) returns (Item);
-  rpc List (ListItemRequest) returns (ListResponse);
-  rpc Find (FindItemRequest) returns (Item);
-  rpc Update (UpdateItemRequest) returns (Item);
-  rpc Delete (DeleteItemRequest) returns (google.protobuf.Empty);
+service Items {
+  rpc Create (CreateItemRequest) returns (CreateItemResponse);
+  rpc Filter (FilterItemRequest) returns (FilterItemResponse);
+  rpc List (ListItemRequest) returns (ListItemResponse);
+  rpc Find (FindItemRequest) returns (FindItemResponse);
+  rpc Update (UpdateItemRequest) returns (UpdateItemResponse);
+  rpc Delete (DeleteItemRequest) returns (DeleteItemResponse);
 }
 
 message CreateItemRequest {
   Item item = 1 [(validate.rules).message.required = true];
 }
+message CreateItemResponse {
+  Item item = 1;
+}
+
 message UpdateItemRequest {
+  Item item = 1;
+}
+message UpdateItemResponse {
   Item item = 1;
 }
 message DeleteItemRequest {
   string id = 1 [(validate.rules).string.uuid = true];
 }
-message ListResponse {
+message DeleteItemResponse {}
+message ListItemRequest {}
+message ListItemResponse {
   repeated Item items = 1;
 }
 message FindItemRequest {
   string id = 1[(validate.rules).string.uuid = true];
 }
+message FindItemResponse {
+  Item item = 1;
+}
 
-message ListItemRequest {
+message FilterItemRequest {
   repeated string ids = 1 [(validate.rules).repeated.items.string.uuid = true];
+}
+message FilterItemResponse {
+  repeated Item items = 1;
 }
