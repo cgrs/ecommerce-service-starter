@@ -1,0 +1,47 @@
+Introducción a Go
+
+Carlos González
+22 de septiembre 2021
+carlos.gonzalez@kairosds.com
+
+* ¿Qué es Go?
+.image images/gopher.png
+.caption La mascota de Go, un _gopher_.
+Go es un lenguaje de programación compilado y concurrente de código abierto.
+
+* 
+
+Fue diseñado en Google por:
+
+- Robert Griesemer (contribuyente al proyecto V8).
+- Rob Pike (uno de los creadores de Plan 9).
+- Ken Thompson (creador del lenguaje de programación B).
+
+* Motivación
+En Google se estaba buscando optimizar el desarrollo de programas muy eficientes en red y procesos en paralelo.
+Las soluciones que planteaban utilizaban lenguajes de programación complejos de mantener y gestionar sus dependencias,
+pero no se quería renunciar a algunas de sus características:
+
+- Tipado estático y eficiencia en tiempo de ejecución (inspirado en C).
+- Legibilidad y usabilidad (tomado de Python y Javascript).
+- Alto rendimiento en redes y procesos en paralelo.
+
+* Características principales
+
+* 
+
+- Lenguaje compilado.
+- De tipado estático.
+- Control de errores explícito (no existen las excepciones).
+- Seguridad de memoria: no hay aritmética de punteros (con algunas excepciones: `unsafe`).
+- Sistema de paquetes descentralizado (no hay un equivalente a `npm` de Node).
+- Modelo de concurrencia basado en comunicaciones secuenciales entre procesos (a través de canales).
+
+* ¿Dónde se usa?
+
+* Proyectos escritos en Go
+- Contenerización: Docker, Podman...
+- Orquestación de sistemas: Kubernetes, Openshift...
+- Herramientas "cloud-native": Traefik, Istio, Helm...
+- Bases de datos/almacenes clave-valor: CockroachDB, etcd...
+- Colas de mensajes: NATS, nsq...
