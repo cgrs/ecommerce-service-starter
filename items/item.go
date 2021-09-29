@@ -24,8 +24,12 @@ func AddItem(i *Item) (*Item, error) {
 	return i, nil
 }
 
-func FindItem(name string) *Item {
-	v, _ := items.Load(name);
-	item, _ := v.(*Item);
-	return item;
+func ListItems() []*Item {
+	res := make([]*Item, 0)
+	items.Range(func(key, value interface{}) bool {
+		i, _ := value.(*Item)
+		res = append(res, i)
+		return true
+	})
+	return res
 }
