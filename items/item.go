@@ -6,9 +6,9 @@ import (
 )
 
 type Item struct {
-	Name string
-	Description string
-	Price float64
+	Name string `json:"name" binding:"required"`
+	Description string `json:"description" binding:"required"`
+	Price float64 `json:"price" binding:"required"`
 }
 
 var items sync.Map

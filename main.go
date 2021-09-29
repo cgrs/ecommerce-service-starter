@@ -1,20 +1,10 @@
 package main
 
 import (
-	"github.com/cgrs/ecommerce-service-starter/middlewares"
 	"github.com/cgrs/ecommerce-service-starter/server"
+	"log"
 )
 
 func main() {
-	server.Start(
-		server.CreateServer(
-			"",
-			middlewares.WithLogger(
-				middlewares.WithJson(
-					server.Mux,
-					),
-				nil,
-			),
-		),
-	)
+	log.Fatal(server.CreateServer("").Start())
 }

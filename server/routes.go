@@ -1,46 +1,33 @@
 package server
 
 import (
-	"encoding/json"
 	"github.com/cgrs/ecommerce-service-starter/items"
-	"github.com/gorilla/mux"
-	"io"
+	"github.com/gin-gonic/gin"
 	"net/http"
 )
 
-func RootHandler(rw http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(rw)
-	rw.WriteHeader(http.StatusOK)
-	enc.Encode(map[string]interface{}{"status": 200, "message": "OK"})
+func RootHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "OK"})
 }
 
-var Mux = mux.NewRouter()
+func AddItem(c *gin.Context) {
 
-func AddItem(rw http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(rw)
-	dec := json.NewDecoder(r.Body)
 	var body items.Item
-	if err := dec.Decode(&body); err != nil && err != io.EOF {
-		rw.WriteHeader(http.StatusBadRequest)
-		enc.Encode(map[string]interface{}{"error": err, "status": 400})
-		return
+	if err := c.BindJSON(&body); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err, "status": 400})
 	}
 	i, err := items.AddItem(&body)
 	if err != nil {
-		rw.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(map[string]interface{}{"error": err, "status": 500})
-		return
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err, "status": 500})
 	}
-	rw.WriteHeader(http.StatusCreated)
-	enc.Encode(i)
+	c.JSON(http.StatusCreated, i)
 }
 
-func ListItem(rw http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(rw)
-	enc.Encode(items.ListItems())
+func ListItem(c *gin.Context) {
+	c.JSON(http.StatusOK, items.ListItems())
 }
 
-func init() {
-	Mux.HandleFunc("/items", AddItem).Methods(http.MethodPost)
-	Mux.HandleFunc("/items", ListItem).Methods(http.MethodGet)
+func AddItemRoutes(rg *gin.RouterGroup) {
+	rg.GET("/items", ListItem)
+	rg.POST("/items", AddItem)
 }

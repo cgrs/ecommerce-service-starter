@@ -1,23 +1,28 @@
 package server
 
 import (
-	"log"
-	"net/http"
+	"github.com/gin-gonic/gin"
 )
 
-func CreateServer(address string, handler http.Handler) *http.Server {
+type Server struct {
+	g *gin.Engine
+	addr string
+}
+
+func CreateServer(address string) *Server {
 	if address == "" {
 		address = "localhost:3000"
 	}
 
-	return &http.Server{
-		Addr:    address,
-		Handler: handler,
-	}
+	gin.SetMode(gin.ReleaseMode)
+
+	g := gin.Default()
+
+	AddItemRoutes(g.Group("/api"))
+
+	return &Server{g,address}
 }
 
-// Starts the server
-func Start(s *http.Server) error {
-	log.Printf("Server is listening on http://%s\n", s.Addr)
-	return s.ListenAndServe()
+func (s *Server) Start() error {
+	return s.g.Run(s.addr)
 }
